@@ -61,22 +61,46 @@ if CORS_AVAILABLE:
 #lib = CDLL(cpp_engine_path)
 
 # Load C++ engine (Windows DLL)
-cpp_engine_path = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "cpp",
-    "engine.dll"
-)
+#cpp_engine_path = os.path.join(
+ #   os.path.dirname(__file__),
+  #  "..",
+   # "cpp",
+    #"engine.dll"
+#)
 
-cpp_engine_path = os.path.abspath(cpp_engine_path)
+#cpp_engine_path = os.path.abspath(cpp_engine_path)
 
-if not os.path.exists(cpp_engine_path):
-    raise FileNotFoundError(
-        f"C++ engine not found at {cpp_engine_path}. "
-        f"Please compile engine.cpp into engine.dll first."
+#if not os.path.exists(cpp_engine_path):
+ #   raise FileNotFoundError(
+  #      f"C++ engine not found at {cpp_engine_path}. "
+   #     f"Please compile engine.cpp into engine.dll first."
+   # )
+
+#lib = CDLL(cpp_engine_path)
+
+# ================================
+# Optional C++ Engine (Local only)
+# ================================
+USE_CPP_ENGINE = os.environ.get("USE_CPP_ENGINE", "false").lower() == "true"
+
+lib = None
+
+if USE_CPP_ENGINE:
+    cpp_engine_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "cpp",
+        "engine.so"   # Linux engine
     )
+    cpp_engine_path = os.path.abspath(cpp_engine_path)
 
-lib = CDLL(cpp_engine_path)
+    if not os.path.exists(cpp_engine_path):
+        raise FileNotFoundError(
+            f"C++ engine not found at {cpp_engine_path}. "
+            f"Please compile engine.cpp into engine.so first."
+        )
+
+    lib = CDLL(cpp_engine_path)
 
 
 # Set up C++ function signatures
@@ -98,6 +122,25 @@ lib.find_support_resistance.restype = c_int
 
 
 def analyze_stock(stock_symbol, date_from, date_to):
+        # If C++ engine is disabled (cloud deployment)
+    if lib is None:
+        return {
+            "volatility": None,
+            "volatility_percent": None,
+            "sma": None,
+            "ema": None,
+            "rsi": None,
+            "support": None,
+            "resistance": None,
+            "trend": "Unavailable",
+            "momentum": "Unavailable",
+            "risk": "Unavailable",
+            "signal": "C++ Engine Disabled",
+            "current_price": None,
+            "ai_explanation": "Technical indicators are disabled in cloud demo mode.",
+            "chart": {}
+        }
+
     """Analyze stock using C++ engine and yfinance"""
     try:
         # Download stock data with error handling
