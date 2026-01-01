@@ -470,12 +470,27 @@ async function loadAnalysis() {
         }
         
         // Update indicators
-        update("ema", data.ema.toFixed(2), "emaLoad");
-        update("sma", data.sma.toFixed(2), "smaLoad");
-        update("rsi", data.rsi.toFixed(2), "rsiLoad");
-        update("vol", `${data.volatility_percent.toFixed(2)}%`, "volLoad");
-        update("support", data.support.toFixed(2), "supportLoad");
-        update("resistance", data.resistance ? data.resistance.toFixed(2) : "—", "resistanceLoad");
+        //update("ema", data.ema.toFixed(2), "emaLoad");
+        //update("sma", data.sma.toFixed(2), "smaLoad");
+        //update("rsi", data.rsi.toFixed(2), "rsiLoad");
+        //update("vol", `${data.volatility_percent.toFixed(2)}%`, "volLoad");
+        //update("support", data.support.toFixed(2), "supportLoad");
+        //update("resistance", data.resistance ? data.resistance.toFixed(2) : "—", "resistanceLoad");
+        update("ema", data.ema ? Number(data.ema).toFixed(2) : "—", "emaLoad");
+update("sma", data.sma ? Number(data.sma).toFixed(2) : "—", "smaLoad");
+update("rsi", data.rsi ? Number(data.rsi).toFixed(2) : "—", "rsiLoad");
+update(
+  "vol",
+  data.volatility_percent ? `${Number(data.volatility_percent).toFixed(2)}%` : "—",
+  "volLoad"
+);
+update("support", data.support ? Number(data.support).toFixed(2) : "—", "supportLoad");
+update(
+  "resistance",
+  data.resistance ? Number(data.resistance).toFixed(2) : "—",
+  "resistanceLoad"
+);
+
 
         // Render candlestick chart if data available
         if (data.chart && Array.isArray(data.chart.ohlc) && data.chart.ohlc.length > 0) {
@@ -515,13 +530,15 @@ function updateSignalBanner(signal, trend, rsi, risk) {
     banner.className = 'signal-banner';
     
     // Set signal value
-    signalValue.textContent = signal.toUpperCase();
+    //signalValue.textContent = signal.toUpperCase();
+    signalValue.textContent = signal ? signal.toUpperCase() : "HOLD";
+
     
     // Add appropriate class and styling based on signal
-    if (signal.toUpperCase() === 'BUY') {
+    if (signal && signal.toUpperCase() === 'BUY') {
         banner.classList.add('buy');
         signalSubtitle.textContent = `Strong buying opportunity • RSI: ${rsi.toFixed(1)} • Risk: ${risk}`;
-    } else if (signal.toUpperCase() === 'SELL') {
+    } else if (signal && signal.toUpperCase() === 'SELL') {
         banner.classList.add('sell');
         signalSubtitle.textContent = `Consider selling • RSI: ${rsi.toFixed(1)} • Risk: ${risk}`;
     } else {
