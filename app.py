@@ -81,7 +81,6 @@ if not GEMINI_API_KEY:
 else:
     gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # Initialize Flask
