@@ -18,28 +18,49 @@ from google import genai   #use this for mac systems
 
 
 # Initialize Firebase
-try:
+#try:
   # cred = credentials.Certificate("servicekey2.json")
   
   #  cred = credentials.Certificate(
-    "servicekey2.json"
+   # "servicekey2.json"
     #)
     #firebase_admin.initialize_app(cred)
 
-    import os
-import json
-import firebase_admin
-from firebase_admin import credentials
+    #import os
+    #import json
+   # import firebase_admin
+  #  from firebase_admin import credentials
 
-firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+ #   firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+#
+  #  cred = credentials.Certificate(json.loads(firebase_json))
+ #   firebase_admin.initialize_app(cred)
 
-cred = credentials.Certificate(json.loads(firebase_json))
-firebase_admin.initialize_app(cred)
-
-except ValueError:
+#except ValueError:
     # App already initialized
-    pass
+  #  pass
+
+# ================================
+# Firebase Initialization (Render-safe)
+# ================================
+import json
+
+if not firebase_admin._apps:
+    try:
+        firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT")
+
+        if not firebase_json:
+            raise ValueError("FIREBASE_SERVICE_ACCOUNT not set")
+
+        firebase_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(firebase_dict)
+        firebase_admin.initialize_app(cred)
+
+    except Exception as e:
+        print("🔥 Firebase initialization failed:", e)
+
 db = firestore.client()
+
 
 # Initialize Gemini AI
 #GEMINI_API_KEY = ""
@@ -51,8 +72,14 @@ import os
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+#if not GEMINI_API_KEY:
+ #   raise ValueError("GEMINI_API_KEY not set")
+
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not set")
+    print("⚠️ GEMINI_API_KEY not set — AI features disabled")
+    gemini_client = None
+else:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -114,21 +141,43 @@ if USE_CPP_ENGINE:
 
 
 # Set up C++ function signatures
-lib.calculate_volatility.argtypes = [POINTER(c_double), c_int]
-lib.calculate_volatility.restype = c_double
+#lib.calculate_volatility.argtypes = [POINTER(c_double), c_int]
+#lib.calculate_volatility.restype = c_double
 
-lib.calculate_sma.argtypes = [POINTER(c_double), c_int]
-lib.calculate_sma.restype = c_double
+#lib.calculate_sma.argtypes = [POINTER(c_double), c_int]
+#lib.calculate_sma.restype = c_double
 
-lib.calculate_ema.argtypes = [POINTER(c_double), c_int, c_double]
-lib.calculate_ema.restype = c_double
+#lib.calculate_ema.argtypes = [POINTER(c_double), c_int, c_double]
+#lib.calculate_ema.restype = c_double
 
-lib.calculate_rsi.argtypes = [POINTER(c_double), c_int]
-lib.calculate_rsi.restype = c_double
+#lib.calculate_rsi.argtypes = [POINTER(c_double), c_int]
+#lib.calculate_rsi.restype = c_double
 
-lib.find_support_resistance.argtypes = [POINTER(c_double), c_int,
-                                        POINTER(c_double), POINTER(c_double)]
-lib.find_support_resistance.restype = c_int
+#lib.find_support_resistance.argtypes = [POINTER(c_double), c_int,
+#                                        POINTER(c_double), POINTER(c_double)]
+#lib.find_support_resistance.restype = c_int
+
+# ================================
+# C++ Engine Function Signatures
+# ================================
+if lib is not None:
+    lib.calculate_volatility.argtypes = [POINTER(c_double), c_int]
+    lib.calculate_volatility.restype = c_double
+
+    lib.calculate_sma.argtypes = [POINTER(c_double), c_int]
+    lib.calculate_sma.restype = c_double
+
+    lib.calculate_ema.argtypes = [POINTER(c_double), c_int, c_double]
+    lib.calculate_ema.restype = c_double
+
+    lib.calculate_rsi.argtypes = [POINTER(c_double), c_int]
+    lib.calculate_rsi.restype = c_double
+
+    lib.find_support_resistance.argtypes = [
+        POINTER(c_double), c_int,
+        POINTER(c_double), POINTER(c_double)
+    ]
+    lib.find_support_resistance.restype = c_int
 
 
 def analyze_stock(stock_symbol, date_from, date_to):
