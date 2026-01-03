@@ -8,7 +8,7 @@ try:
     CORS_AVAILABLE = True
 except ImportError:
     CORS_AVAILABLE = False
-from ctypes import CDLL, c_double, POINTER, c_int
+
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -87,309 +87,115 @@ else:
 app = Flask(__name__)
 if CORS_AVAILABLE:
     CORS(app)  # Enable CORS for API endpoints
+def calculate_sma(series, period=14):
+    return series.rolling(period).mean()
 
-# Load C++ engine(MAC,.SO)
+def calculate_ema(series, period=14):
+    return series.ewm(span=period, adjust=False).mean()
 
-#cpp_engine_path = os.path.join(os.path.dirname(__file__), "..", "cpp", "engine.so")
-#cpp_engine_path = os.path.abspath(cpp_engine_path)
-#if not os.path.exists(cpp_engine_path):
- #   raise FileNotFoundError(f"C++ engine not found at {cpp_engine_path}. Please compile engine.cpp first.")
-#lib = CDLL(cpp_engine_path)
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
 
-# Load C++ engine (Windows DLL)
-#cpp_engine_path = os.path.join(
- #   os.path.dirname(__file__),
-  #  "..",
-   # "cpp",
-    #"engine.dll"
-#)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
 
-#cpp_engine_path = os.path.abspath(cpp_engine_path)
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
-#if not os.path.exists(cpp_engine_path):
- #   raise FileNotFoundError(
-  #      f"C++ engine not found at {cpp_engine_path}. "
-   #     f"Please compile engine.cpp into engine.dll first."
-   # )
+def calculate_volatility(series):
+    return series.pct_change().std()
 
-#lib = CDLL(cpp_engine_path)
-
-# ================================
-# Optional C++ Engine (Local only)
-# ================================
-USE_CPP_ENGINE = os.environ.get("USE_CPP_ENGINE", "false").lower() == "true"
-
-lib = None
-
-if USE_CPP_ENGINE:
-    cpp_engine_path = os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "cpp",
-        "engine.so"   # Linux engine
-    )
-    cpp_engine_path = os.path.abspath(cpp_engine_path)
-
-    if not os.path.exists(cpp_engine_path):
-        raise FileNotFoundError(
-            f"C++ engine not found at {cpp_engine_path}. "
-            f"Please compile engine.cpp into engine.so first."
-        )
-
-    lib = CDLL(cpp_engine_path)
-
-
-# Set up C++ function signatures
-#lib.calculate_volatility.argtypes = [POINTER(c_double), c_int]
-#lib.calculate_volatility.restype = c_double
-
-#lib.calculate_sma.argtypes = [POINTER(c_double), c_int]
-#lib.calculate_sma.restype = c_double
-
-#lib.calculate_ema.argtypes = [POINTER(c_double), c_int, c_double]
-#lib.calculate_ema.restype = c_double
-
-#lib.calculate_rsi.argtypes = [POINTER(c_double), c_int]
-#lib.calculate_rsi.restype = c_double
-
-#lib.find_support_resistance.argtypes = [POINTER(c_double), c_int,
-#                                        POINTER(c_double), POINTER(c_double)]
-#lib.find_support_resistance.restype = c_int
-
-# ================================
-# C++ Engine Function Signatures
-# ================================
-if lib is not None:
-    lib.calculate_volatility.argtypes = [POINTER(c_double), c_int]
-    lib.calculate_volatility.restype = c_double
-
-    lib.calculate_sma.argtypes = [POINTER(c_double), c_int]
-    lib.calculate_sma.restype = c_double
-
-    lib.calculate_ema.argtypes = [POINTER(c_double), c_int, c_double]
-    lib.calculate_ema.restype = c_double
-
-    lib.calculate_rsi.argtypes = [POINTER(c_double), c_int]
-    lib.calculate_rsi.restype = c_double
-
-    lib.find_support_resistance.argtypes = [
-        POINTER(c_double), c_int,
-        POINTER(c_double), POINTER(c_double)
-    ]
-    lib.find_support_resistance.restype = c_int
-
+def calculate_support_resistance(series):
+    return series.min(), series.max()
 
 def analyze_stock(stock_symbol, date_from, date_to):
-        # If C++ engine is disabled (cloud deployment)
-    if lib is None:
-        return {
-            "volatility": None,
-            "volatility_percent": None,
-            "sma": None,
-            "ema": None,
-            "rsi": None,
-            "support": None,
-            "resistance": None,
-            "trend": "Unavailable",
-            "momentum": "Unavailable",
-            "risk": "Unavailable",
-            "signal": "C++ Engine Disabled",
-            "current_price": None,
-            "ai_explanation": "Technical indicators are disabled in cloud demo mode.",
-            "chart": {}
-        }
-
-    """Analyze stock using C++ engine and yfinance"""
     try:
-        # Download stock data with error handling
-        try:
-            data = yf.download(stock_symbol, start=date_from, end=date_to, progress=False)
-        except Exception as e:
-            print(f"Error downloading data for {stock_symbol}: {e}")
+        df = yf.download(stock_symbol, start=date_from, end=date_to, progress=False)
+
+        if df.empty:
             return None
-        
-        if data.empty:
-            print(f"No data available for {stock_symbol}")
-            return None
-        
-        # Handle different column structures from yfinance
-        # yfinance returns MultiIndex columns when downloading single symbol sometimes
-        if isinstance(data.columns, pd.MultiIndex):
-            # MultiIndex columns - yfinance structure is typically: (Price, Ticker)
-            # e.g., ('Close', 'TCS.NS'), ('High', 'TCS.NS'), etc.
-            try:
-                # Method 1: Try direct tuple access if we know the structure
-                try:
-                    prices = data[('Close', stock_symbol)].dropna().to_numpy(dtype=np.float64)
-                except (KeyError, IndexError):
-                    # Method 2: Use xs to extract Close from level 0 (Price level)
-                    try:
-                        close_data = data.xs('Close', level=0, axis=1)
-                        # Get first column (should be the stock symbol)
-                        prices = close_data.iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-                    except (KeyError, IndexError):
-                        # Method 3: Search for Close column manually
-                        close_col = None
-                        for col in data.columns:
-                            if isinstance(col, tuple):
-                                # Check if 'Close' is in the tuple
-                                if 'Close' in col or any('Close' == str(level) for level in col):
-                                    close_col = col
-                                    break
-                            elif str(col) == 'Close' or 'Close' in str(col):
-                                close_col = col
-                                break
-                        
-                        if close_col:
-                            prices = data[close_col].dropna().to_numpy(dtype=np.float64)
-                        else:
-                            # Last resort: use first column (Close is usually first)
-                            prices = data.iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-            except Exception as e:
-                print(f"Error extracting prices from MultiIndex: {e}")
-                # Last resort: try first column
-                try:
-                    prices = data.iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-                except:
-                    return None
-        elif 'Close' in data.columns:
-            # Simple column structure
-            prices = data['Close'].dropna().to_numpy(dtype=np.float64)
+
+        close = df["Close"]
+
+        sma = calculate_sma(close).iloc[-1]
+        ema = calculate_ema(close).iloc[-1]
+        rsi = calculate_rsi(close).iloc[-1]
+        volatility = calculate_volatility(close)
+        support, resistance = calculate_support_resistance(close)
+
+        trend = "Bullish" if ema > sma else "Bearish"
+
+        if rsi < 30:
+            signal = "BUY"
+            risk = "Low"
+        elif rsi > 70:
+            signal = "SELL"
+            risk = "High"
         else:
-            # Try to find any column with 'Close' in the name
-            close_cols = [col for col in data.columns if 'Close' in str(col)]
-            if close_cols:
-                prices = data[close_cols[0]].dropna().to_numpy(dtype=np.float64)
-            else:
-                print(f"Could not find Close prices for {stock_symbol}")
-                print(f"Available columns: {data.columns.tolist()}")
-                return None
-        
-        if len(prices) == 0:
-            print(f"No price data available for {stock_symbol}")
-            return None
-        
-        # Calculate technical indicators using C++ engine
-        vol = lib.calculate_volatility(prices.ctypes.data_as(POINTER(c_double)), len(prices))
-        sma = lib.calculate_sma(prices.ctypes.data_as(POINTER(c_double)), len(prices))
-        ema = lib.calculate_ema(prices.ctypes.data_as(POINTER(c_double)), len(prices), 0.1)
-        rsi = lib.calculate_rsi(prices.ctypes.data_as(POINTER(c_double)), len(prices))
-        
-        supports = np.zeros(len(prices), dtype=np.float64)
-        resistances = np.zeros(len(prices), dtype=np.float64)
-        sr_result = lib.find_support_resistance(
-            prices.ctypes.data_as(POINTER(c_double)),
-            len(prices),
-            supports.ctypes.data_as(POINTER(c_double)),
-            resistances.ctypes.data_as(POINTER(c_double))
-        )
-        
-        num_supports = sr_result // 1000
-        num_resistances = sr_result % 1000
-        support_level = supports[:num_supports].min() if num_supports > 0 else prices.min()
-        resistance_level = resistances[:num_resistances].max() if num_resistances > 0 else prices.max()
-        
-        # Calculate trading signals
-        trend = "bullish" if ema > 1.01 * sma else ("bearish" if ema < 0.99 * sma else "neutral")
-        momentum_status = "Overbought" if rsi > 70 else ("Oversold" if rsi < 30 else "neutral")
-        risk_ratio = vol / sma if sma > 0 else 0
-        risk = "High Risk" if risk_ratio > 0.08 else ("Medium Risk" if risk_ratio > 0.04 else "Low Risk")
-        
-        final_signal = "BUY" if trend == "bullish" and rsi < 60 and risk != "High Risk" else \
-                      ("SELL" if trend == "bearish" and rsi > 40 else "HOLD")
+            signal = "HOLD"
+            risk = "Medium"
 
-        # Generate AI explanation using Gemini
-        ai_explanation = None
-        try:
-            explanation_prompt = f"""Analyze this stock and provide a brief, professional trading explanation:
-
-Stock Analysis Summary:
-- Current Price: ₹{round(prices[-1], 2)}
-- EMA: ₹{round(ema, 2)}
-- SMA: ₹{round(sma, 2)}
-- RSI: {round(rsi, 2)}
-- Volatility: {round((vol / sma * 100) if sma > 0 else 0, 2)}%
-- Support Level: ₹{round(support_level, 2)}
-- Resistance Level: ₹{round(resistance_level, 2)}
-- Trend: {trend}
-- Momentum: {momentum_status}
-- Risk Level: {risk}
-- Trading Signal: {final_signal}
-
-Provide a concise 2-3 sentence explanation of why the signal is {final_signal}, considering the technical indicators. Be professional and educational."""
-            
-            response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=explanation_prompt
-            )
-            ai_explanation = response.text if hasattr(response, 'text') else str(response)
-        except Exception as e:
-            print(f"Error generating AI explanation: {e}")
-            ai_explanation = None
-
-        # Prepare chart data with OHLC (Open, High, Low, Close) for candlesticks
-        window = min(90, len(prices))
-        
-        # Extract OHLC data
-        if isinstance(data.columns, pd.MultiIndex):
-            try:
-                open_data = data[('Open', stock_symbol)].dropna().to_numpy(dtype=np.float64)
-                high_data = data[('High', stock_symbol)].dropna().to_numpy(dtype=np.float64)
-                low_data = data[('Low', stock_symbol)].dropna().to_numpy(dtype=np.float64)
-                close_data = data[('Close', stock_symbol)].dropna().to_numpy(dtype=np.float64)
-            except:
-                # Fallback: use xs method
-                open_data = data.xs('Open', level=0, axis=1).iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-                high_data = data.xs('High', level=0, axis=1).iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-                low_data = data.xs('Low', level=0, axis=1).iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-                close_data = data.xs('Close', level=0, axis=1).iloc[:, 0].dropna().to_numpy(dtype=np.float64)
-        else:
-            open_data = data['Open'].dropna().to_numpy(dtype=np.float64)
-            high_data = data['High'].dropna().to_numpy(dtype=np.float64)
-            low_data = data['Low'].dropna().to_numpy(dtype=np.float64)
-            close_data = data['Close'].dropna().to_numpy(dtype=np.float64)
-        
-        # Ensure all arrays have same length
-        min_len = min(len(open_data), len(high_data), len(low_data), len(close_data))
-        open_data = open_data[-window:][-min_len:]
-        high_data = high_data[-window:][-min_len:]
-        low_data = low_data[-window:][-min_len:]
-        close_data = close_data[-window:][-min_len:]
-        
-        # Prepare OHLC data for candlesticks
-        chart_dates = [d.strftime("%Y-%m-%d") for d in data.index[-window:][-min_len:]]
-        chart_ohlc = []
-        for i in range(len(open_data)):
-            chart_ohlc.append({
-                "x": chart_dates[i],
-                "o": float(open_data[i]),
-                "h": float(high_data[i]),
-                "l": float(low_data[i]),
-                "c": float(close_data[i])
+        # OHLC for chart
+        ohlc = []
+        for i, row in df.iterrows():
+            ohlc.append({
+                "x": i.strftime("%Y-%m-%d"),
+                "o": float(row["Open"]),
+                "h": float(row["High"]),
+                "l": float(row["Low"]),
+                "c": float(row["Close"])
             })
 
+        # Gemini explanation
+        ai_explanation = None
+        if gemini_client:
+            prompt = f"""
+Stock: {stock_symbol}
+Trend: {trend}
+RSI: {rsi:.1f}
+Signal: {signal}
+Support: {support:.2f}
+Resistance: {resistance:.2f}
+
+Explain this in 2–3 sentences for a beginner trader.
+"""
+            try:
+                response = gemini_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt
+                )
+                ai_explanation = response.text
+            except:
+                ai_explanation = None
+
         return {
-            "volatility": round(vol, 2),
-            "volatility_percent": round((vol / sma * 100) if sma > 0 else 0, 2),
-            "sma": round(sma, 2),
-            "ema": round(ema, 2),
-            "rsi": round(rsi, 2),
-            "support": round(support_level, 2),
-            "resistance": round(resistance_level, 2),
+            "current_price": float(close.iloc[-1]),
+            "sma": float(sma),
+            "ema": float(ema),
+            "rsi": float(rsi),
+            "volatility": float(volatility),
+            "volatility_percent": float(volatility * 100),
+            "support": float(support),
+            "resistance": float(resistance),
             "trend": trend,
-            "momentum": momentum_status,
+            "signal": signal,
             "risk": risk,
-            "signal": final_signal,
-            "current_price": round(prices[-1], 2),
+            "momentum": "Strong" if rsi > 50 else "Weak",
             "ai_explanation": ai_explanation,
             "chart": {
-                "dates": chart_dates,
-                "ohlc": chart_ohlc
+                "ohlc": ohlc
             }
         }
+
     except Exception as e:
-        print(f"Error analyzing stock: {e}")
+        print("Analysis error:", e)
         return None
+
+
+
 
 
 @app.route('/')
@@ -498,3 +304,5 @@ def api_chat():
 #if __name__ == "__main__":              #jonshi
    # app.run(debug=True, host='0.0.0.0', port=5001)
 
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
